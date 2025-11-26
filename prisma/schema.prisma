@@ -1,0 +1,317 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Necessary for Next auth
+model Account {
+  id                       String  @id @default(cuid())
+  userId                   String
+  type                     String
+  provider                 String
+  providerAccountId        String
+  refresh_token            String?
+  access_token             String?
+  expires_at               Int?
+  token_type               String?
+  scope                    String?
+  id_token                 String?
+  session_state            String?
+  user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refresh_token_expires_in Int?
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String?    @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  
+  // The rest are added by me
+  fights        Fight[]
+  allies        UserAlly[]
+
+  // This is actually an one-to-one relationship but we dont mess with nextauth
+  balance UserBalance[]
+  bannerPities UserPityForBanner[]
+}
+
+model UserBalance {
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id])
+
+  posterAllyId    String?
+  posterAlly      Ally?  @relation(fields: [posterAllyId], references: [id])
+  diamonds        Int     @default(0)
+  gold            Int     @default(0)
+  level           Int     @default(1)
+  xp              Int     @default(0)
+}
+
+model UserPityForBanner {
+  bannerId    String
+  banner      Banner    @relation(fields: [bannerId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+
+  pity        Int       @default(0)
+
+  @@unique([bannerId, userId])
+}
+
+enum Currency {
+  DIAMONDS
+  GOLD
+}
+
+model Banner {
+  id           String  @id @default(cuid())
+  name         String
+  active       Boolean @default(false)
+  posterAllyId String
+
+  // Rates
+  commonRate Float // ex. 60
+  rareRate   Float // ex. 25
+  srRate     Float // ex, 13
+  ssrRate    Float // ex. 1.8
+  sssrRate   Float // ex. 0.2
+
+  allies           BannerAlly[]
+  acceptedPayments AcceptedPayments[]
+
+  createdAt DateTime @default(now())
+
+  pities UserPityForBanner[]
+}
+
+model AcceptedPayments {
+  id       String   @id @default(cuid())
+  currency Currency
+  amount   Int
+  banner   Banner   @relation(fields: [bannerId], references: [id])
+  bannerId String
+}
+
+model BannerAlly {
+  id       String @id @default(cuid())
+  banner   Banner @relation(fields: [bannerId], references: [id])
+  bannerId String
+  ally     Ally   @relation(fields: [allyId], references: [id])
+  allyId   String
+
+  @@unique([bannerId, allyId]) // estää duplikaatit
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Fight {
+  id        String       @id @default(cuid())
+  user      User         @relation(fields: [userId], references: [id])
+  userId    String
+  enemies   FightEnemy[]
+  allies    FightAlly[]
+  stage     Stage        @relation(fields: [stageId], references: [id])
+  stageId   String
+  createdAt DateTime     @default(now())
+  result    String? // win | lose | null
+}
+
+model Map {
+  id     String  @id @default(cuid())
+  name   String
+  visible Boolean @default(true)
+  campaign  Boolean @default(false)
+  level     Int
+
+  stages Stage[]
+
+  @@unique([campaign, level])
+}
+
+model Stage {
+  id       String       @id @default(cuid())
+  name     String
+  enemies  StageEnemy[]
+  map      Map          @relation(fields: [mapId], references: [id])
+  mapId    String
+  mapLevel Int
+  boss     Boolean
+  xPercent Int
+  yPercent Int
+
+  fights Fight[]
+}
+
+model StageEnemy {
+  id       String @id @default(cuid())
+  enemy    Enemy  @relation(fields: [enemyId], references: [id])
+  enemyId  String
+  stage    Stage  @relation(fields: [stageId], references: [id])
+  stageId  String
+  level    Int
+  position Int // between 0-2
+}
+
+model Enemy {
+  id   String @id @default(cuid())
+  name String
+  description String
+  class CharacterClass
+  hp   Int
+  def  Int
+  mDef Int
+  atk  Int
+  mAtk Int
+  critChance  Float
+  critAtk     Int
+  dodgeChance Int
+  
+  activeSpell      ActiveSpell?  @relation(fields: [activeSpellName], references: [name])
+  activeSpellName  String?
+  passiveSpell     PassiveSpell? @relation(fields: [passiveSpellName], references: [name])
+  passiveSpellName String?
+  
+
+  fights       FightEnemy[] // not used but prisma insists on adding this
+  stageEnemies StageEnemy[] // not used but prisma insits on adding this
+}
+
+enum AllyRarity {
+  COMMON
+  RARE
+  SR
+  SSR
+  SSSR
+}
+
+enum CharacterClass {
+  DPS
+  TANK
+  HEALER
+  BUFF
+}
+
+model Ally {
+  id                  String     @id @default(cuid())
+  name                String
+  description         String
+  rarity              AllyRarity
+  class               CharacterClass
+  settableAsPortrait  Boolean @default(false)
+  starterAlly         Boolean @default(false)
+  background          AllyBackground @relation(fields: [backgroundId], references: [id])
+  backgroundId        String
+
+  hp          Int
+  atk         Int
+  mAtk        Int
+  def         Int
+  mDef        Float // Magical  defense amount
+  critChance  Float
+  critAtk     Int
+  dodgeChance Float // Probability to dodge the whole attack
+
+  activeSpell      ActiveSpell?  @relation(fields: [activeSpellName], references: [name])
+  activeSpellName  String?
+  passiveSpell     PassiveSpell? @relation(fields: [passiveSpellName], references: [name])
+  passiveSpellName String?
+
+  fights       FightAlly[]
+  users        UserAlly[]
+  bannerAllies BannerAlly[]
+  posterUser   UserBalance[]
+}
+
+model AllyBackground {
+  id    String @id @default(cuid())
+  allies Ally[]
+}
+
+model FightEnemy {
+  id       String @id @default(cuid())
+  fight    Fight  @relation(fields: [fightId], references: [id])
+  fightId  String
+  enemy    Enemy  @relation(fields: [enemyId], references: [id])
+  enemyId  String
+  position Int // from 0-2
+  level    Int
+}
+
+model FightAlly {
+  id       String @id @default(cuid())
+  fight    Fight  @relation(fields: [fightId], references: [id])
+  fightId  String
+  ally     Ally   @relation(fields: [allyId], references: [id])
+  allyId   String
+  position Int // from 0€-3
+  level    Int    
+  ascension Int
+}
+
+model PassiveSpell {
+  name        String @unique
+  description String
+  duration    Int
+
+  allies Ally[]
+  enemies Enemy[]
+}
+
+model ActiveSpell {
+  name           String @unique
+  description    String
+  requiredMana   Int
+  // Mana increase on turn
+  manaIncrease   Int
+  maxMana        Int
+  duration       Int?
+  targetPosition Int?
+
+  allies Ally[]
+  enemies Enemy[]
+}
+
+model UserAlly {
+  id       String  @id @default(cuid())
+  user     User    @relation(fields: [userId], references: [id])
+  userId   String
+  ally     Ally    @relation(fields: [allyId], references: [id])
+  allyId   String
+  selected Boolean @default(false)
+  position Int? // between 0-3
+
+  // Feed xp to increase level 
+  xp    Int @default(0)
+  level Int @default(1)
+
+  // Feed tokens to increase ascension
+  tokens    Int @default(0)
+  ascension Int @default(0)
+
+  // User can have the ally only once
+  @@unique([userId, allyId])
+}
